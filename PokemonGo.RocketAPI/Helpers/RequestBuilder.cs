@@ -1,5 +1,6 @@
-﻿using Google.Protobuf;
+using Google.Protobuf;
 using PokemonGo.RocketAPI.Enums;
+using POGOProtos.Networking;
 using POGOProtos.Networking.Envelopes;
 using POGOProtos.Networking.Requests;
 using System;
@@ -10,6 +11,7 @@ using System.Linq;
 using PokemonGo.RocketAPI.Extensions;
 // ReSharper disable RedundantAssignment
 using System.Security.Cryptography;
+using System.Text;
 
 namespace PokemonGo.RocketAPI.Helpers
 {
@@ -39,15 +41,23 @@ namespace PokemonGo.RocketAPI.Helpers
             if (_encryptNative != null) return;
             if (IntPtr.Size == 4)
             {
+                _encryptNativeInit = (EncryptInitDelegate)
+                    FunctionLoader.LoadFunction<EncryptInitDelegate>(
+                        @"Resources\encrypt32.dll", "MobBot");
+
                 _encryptNative = (EncryptDelegate)
                     FunctionLoader.LoadFunction<EncryptDelegate>(
-                        @"Resources\encrypt32.dll", "encrypt");
+                        @"Resources\encrypt32.dll", "encryptMobBot");
             }
             else
             {
+                _encryptNativeInit = (EncryptInitDelegate)
+                    FunctionLoader.LoadFunction<EncryptInitDelegate>(
+                        @"Resources\encrypt32.dll", "MobBot");
+
                 _encryptNative = (EncryptDelegate)
                     FunctionLoader.LoadFunction<EncryptDelegate>(
-                        @"Resources\encrypt64.dll", "encrypt");
+                        @"Resources\encrypt64.dll", "encryptMobBot");
             }
         }
 
@@ -105,7 +115,7 @@ namespace PokemonGo.RocketAPI.Helpers
                 Latitude = (float)_latitude,
                 Longitude = (float)_longitude,
                 Altitude = (float)_altitude,
-                TimestampSnapshot = (ulong)InternalWatch.ElapsedMilliseconds - 200,
+                TimestampSinceStart = (ulong)InternalWatch.ElapsedMilliseconds - 200,
                 Floor = 3,
                 LocationType = 1
             });
@@ -126,20 +136,16 @@ namespace PokemonGo.RocketAPI.Helpers
             var seed = BitConverter.ToUInt64(x.ComputeHash(_authTicket.ToByteArray()), 0);
             x = new System.Data.HashFunction.xxHash(64, seed);
             foreach (var req in requests)
-                sig.RequestHash.Add((long)BitConverter.ToUInt64(x.ComputeHash(req.ToByteArray()), 0));
+                sig.RequestHash.Add(BitConverter.ToUInt64(x.ComputeHash(req.ToByteArray()), 0));
 
             //static for now
-            sig.SessionHash = ByteString.CopyFrom(0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F);
+            sig.Unk22 = ByteString.CopyFrom(0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F);
 
-            sig.Unknown25 = -8537042734809897855;
 
             var val = new Unknown6
             {
                 RequestType = 6,
-                Unknown2 = new Unknown6.Types.Unknown2
-                {
-                    EncryptedSignature = ByteString.CopyFrom(Encrypt(sig.ToByteArray()))
-                }
+                Unknown2 = new Unknown6.Types.Unknown2 { Unknown1 = ByteString.CopyFrom(Encrypt(sig.ToByteArray())) }
             };
             return val;
         }
@@ -165,12 +171,30 @@ namespace PokemonGo.RocketAPI.Helpers
             var iv_ptr = Marshal.AllocHGlobal(iv.Length);
             Marshal.Copy(iv, 0, iv_ptr, iv.Length);
 
+            var magic = Encoding.ASCII.GetBytes("We love PokeMobBot, They are the true gangstas, everyone else is just a poser!");
+            var magic_ptr = Marshal.AllocHGlobal(magic.Length);
+            Marshal.Copy(magic, 0, magic_ptr, magic.Length);
+
+            try
+            {
+                var outputSize = outputLength;
+                //Console.WriteLine("Testing Sign");
+                int res = _encryptNativeInit(magic_ptr);
+                //Console.WriteLine(res);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+            }
+
             try
             {
                 var outputSize = outputLength;
                 //_encryptNative(ptr, bytes.Length, new byte[32], 32, ptrOutput, out outputSize);
                 //_encryptNative(ptr, bytes.Length, iv_ptr, iv.Length, ptrOutput, out outputSize);
-                _encryptNative(ptr, bytes.Length, iv_ptr, iv.Length, ptrOutput, out outputSize);
+                //Console.WriteLine("Testing Encrypt");
+                int res = _encryptNative(ptr, bytes.Length, iv_ptr, iv.Length, ptrOutput, out outputSize);
+                //Console.WriteLine(res);
             }
             catch (Exception ex)
             {
@@ -199,9 +223,11 @@ namespace PokemonGo.RocketAPI.Helpers
         //private delegate int EncryptDelegate(IntPtr arr, int length, byte[] iv, int ivsize, IntPtr output, out int outputSize);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private unsafe delegate int EncryptDelegate(IntPtr arr, int length, IntPtr iv, int ivsize, IntPtr output, out int outputSize);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private unsafe delegate int EncryptInitDelegate(IntPtr input);
         //private unsafe delegate int EncryptDelegate(IntPtr arr, int length, byte[] iv, int ivsize, IntPtr output, out int outputSize);
 
-
+        private static EncryptInitDelegate _encryptNativeInit;
         private static EncryptDelegate _encryptNative;
 
         //[DllImport("Resources/encrypt.dll", EntryPoint = "encrypt", CharSet = CharSet.Auto, CallingConvention = CallingConvention.Cdecl)]
@@ -226,7 +252,7 @@ namespace PokemonGo.RocketAPI.Helpers
                 Unknown12 = 989 //12
             };
 
-            e.Unknown6 = GenerateSignature(customRequests);
+            e.Unknown6.Add(GenerateSignature(customRequests));
             return e;
         }
 
