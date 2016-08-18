@@ -49,12 +49,13 @@ namespace PokemonGo.RocketAPI.Rpc
                 NormalizedHitPosition = normalizedHitPos
             };
 
-            // when you miss a throw also set NormalizedHitPosition and SpinModifier to 0 (to exclude from message sent)
+            // when you miss a throw also set NormalizedHitPosition and SpinModifier to 0 (to exclude from message sent) plus set NormalizedReticleSize = 1
             if (!hitPokemon)
             {
                 message.HitPokemon = false;
                 message.SpinModifier = 0;
                 message.NormalizedHitPosition = 0;
+                message.NormalizedReticleSize = 1;
             }
             
             return await PostProtoPayload<Request, CatchPokemonResponse>(RequestType.CatchPokemon, message);
