@@ -53,7 +53,7 @@ namespace PokemonGo.RocketAPI.Helpers
             {
                 _encryptNativeInit = (EncryptInitDelegate)
                     FunctionLoader.LoadFunction<EncryptInitDelegate>(
-                        @"Resources\encrypt32.dll", "MobBot");
+                        @"Resources\encrypt64.dll", "MobBot");
 
                 _encryptNative = (EncryptDelegate)
                     FunctionLoader.LoadFunction<EncryptDelegate>(
